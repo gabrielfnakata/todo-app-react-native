@@ -9,6 +9,12 @@ type uuid = string;
 
 type TodoItem = { id: uuid; value: string; done: boolean };
 
+enum FilterType {
+  ALL = "Todos",
+  PENDING = "Pendentes",
+  COMPLETED = "Concluídos"
+}
+
 function ListItem({ todoItem, toggleTodo }: { todoItem: TodoItem; toggleTodo: (id: uuid) => void }) {
 
   const handlePress = (id: uuid) => {
@@ -65,6 +71,8 @@ export default function Index() {
     { id: crypto.randomUUID(), value: "Sample Todo 3", done: false },
   ]);
 
+  const [filter, setFilter] = React.useState<FilterType>(FilterType.ALL);
+
   const addTodo = (text: string) => {
     setTodos([...todos, { id: crypto.randomUUID(), value: text, done: false }]);
   };
@@ -72,6 +80,16 @@ export default function Index() {
   const toggleTodo = (id: uuid) => {
     setTodos(todos.map(todo => todo.id === id ? { ...todo, done: !todo.done } : todo));
   };
+
+  const filteredTodos = React.useMemo(() => {
+    return todos
+      .filter(todo => {
+        if (filter === FilterType.ALL) return true;
+        if (filter === FilterType.PENDING) return !todo.done;
+        return todo.done;
+      })
+      .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1));
+  }, [todos, filter]);
 
   return (
     <SafeAreaProvider>
@@ -81,9 +99,21 @@ export default function Index() {
             TODO List
           </Text>
           <AddTodoForm addTodoHandler={addTodo} />
+
+          <View style={styles.filterContainer}>
+            {Object.values(FilterType).map((filterType) => (
+              <Button
+                key={filterType}
+                title={filterType}
+                onPress={() => setFilter(filterType)}
+                color={filter === filterType ? "#007AFF" : "#999999"}
+              />
+            ))}
+          </View>
+
           <FlatList
             style={styles.list}
-            data={todos.sort((a, b) => a.done === b.done ? 0 : a.done ? 1 : -1)}
+            data={filteredTodos}
             renderItem={({ item }) => <ListItem todoItem={item} toggleTodo={toggleTodo} />}
           />
         </GestureHandlerRootView>
@@ -124,6 +154,13 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     padding: 10,
     marginTop: 20,
+  },
+  filterContainer: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    width: "100%",
+    paddingHorizontal: 20,
+    marginTop: 10,
   },
 });
 
