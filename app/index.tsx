@@ -1,19 +1,12 @@
-import React from "react";
+
+import { getAllTodos, getDBVersion, getSQLiteVersion, migrateDB } from "@/database";
+import { FilterType, TodoItem, uuid } from "@/types";
+import * as crypto from "expo-crypto";
+import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
+import React, { useEffect, useState } from "react";
 import { Button, Keyboard, StyleSheet, Text, TextInput, View } from "react-native";
 import { FlatList, GestureHandlerRootView } from "react-native-gesture-handler";
-
-import * as crypto from "expo-crypto";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-
-type uuid = string;
-
-type TodoItem = { id: uuid; value: string; done: boolean };
-
-enum FilterType {
-  ALL = "Todos",
-  PENDING = "Pendentes",
-  COMPLETED = "Concluídos"
-}
 
 function ListItem({ todoItem, toggleTodo }: { todoItem: TodoItem; toggleTodo: (id: uuid) => void }) {
 
@@ -26,12 +19,47 @@ function ListItem({ todoItem, toggleTodo }: { todoItem: TodoItem; toggleTodo: (i
     <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
       {!todoItem.done ? (
         <>
-          <Text style={styles.item}>{todoItem.value}</Text>
+          <Text style={styles.item}>{todoItem.text}</Text>
           <Button title="Concluir" onPress={() => {handlePress(todoItem.id)}} color="green" />
         </>
       ) : (
-        <Text style={styles.itemdone}>{todoItem.value}</Text>
+        <Text style={styles.itemdone}>{todoItem.text}</Text>
       )}
+    </View>
+  );
+}
+
+function Footer() {
+  const db = useSQLiteContext();
+  const [sqliteVersion, setSqliteVersion] = useState<string>("");
+  const [dbVersion, setDBVersion] = useState<string>();
+
+  useEffect( () => {
+    async function setup(){
+      const sqliteVersionResult = await getSQLiteVersion(db);
+
+      if (sqliteVersionResult) {
+        setSqliteVersion(sqliteVersionResult['sqlite_version()']);
+      }
+      else {
+        setSqliteVersion('unknown');
+      }
+
+      const dbVersionResult = await getDBVersion(db);
+
+      if (dbVersionResult) {
+        setDBVersion(dbVersionResult['user_version'].toString());
+      }
+      else {
+        setDBVersion('unknown');
+      }
+    }
+    setup();
+  }, [db]);
+
+  return (
+    <View>
+      <Text style={{padding: 20}}>SQLite version: {sqliteVersion} / DBVersion: {dbVersion}</Text>
     </View>
   );
 }
@@ -63,18 +91,24 @@ function AddTodoForm({ addTodoHandler }: { addTodoHandler: (text: string) => voi
 }
 
 
-export default function Index() {
+export function TodoList() {
   
-  const [todos, setTodos] = React.useState<TodoItem[]>([
-    { id: crypto.randomUUID(), value: "Sample Todo", done: false },
-    { id: crypto.randomUUID(), value: "Sample Todo 2", done: true },
-    { id: crypto.randomUUID(), value: "Sample Todo 3", done: false },
-  ]);
-
+  const [todos, setTodos] = React.useState<TodoItem[]>([]);
   const [filter, setFilter] = React.useState<FilterType>(FilterType.ALL);
 
+  const db = useSQLiteContext();
+
+  useEffect(() => {
+    async function load() {
+      const result = await getAllTodos(db);
+      setTodos(result);
+    }
+  
+    load();
+  }, [db])
+
   const addTodo = (text: string) => {
-    setTodos([...todos, { id: crypto.randomUUID(), value: text, done: false }]);
+    setTodos([...todos, { id: crypto.randomUUID(), text: text, done: false, createdAt: new Date() }]);
   };
 
   const toggleTodo = (id: uuid) => {
@@ -92,31 +126,40 @@ export default function Index() {
   }, [todos, filter]);
 
   return (
+    <GestureHandlerRootView style={styles.container}>
+      <Text style={{ fontSize: 32, fontWeight: "bold", marginTop: 20 }}>
+        TODO List
+      </Text>
+      <AddTodoForm addTodoHandler={addTodo} />
+
+      <View style={styles.filterContainer}>
+        {Object.values(FilterType).map((filterType) => (
+          <Button
+            key={filterType}
+            title={filterType}
+            onPress={() => setFilter(filterType)}
+            color={filter === filterType ? "#007AFF" : "#999999"}
+          />
+        ))}
+      </View>
+      <FlatList
+        style={styles.list}
+        data={filteredTodos}
+        renderItem={({ item }) => <ListItem todoItem={item} toggleTodo={toggleTodo} />}
+      />
+    </GestureHandlerRootView>
+  );
+}
+
+
+export default function Index() {
+  return (
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: "white" }}>
-        <GestureHandlerRootView style={styles.container}>
-          <Text style={{ fontSize: 32, fontWeight: "bold", marginTop: 20 }}>
-            TODO List
-          </Text>
-          <AddTodoForm addTodoHandler={addTodo} />
-
-          <View style={styles.filterContainer}>
-            {Object.values(FilterType).map((filterType) => (
-              <Button
-                key={filterType}
-                title={filterType}
-                onPress={() => setFilter(filterType)}
-                color={filter === filterType ? "#007AFF" : "#999999"}
-              />
-            ))}
-          </View>
-
-          <FlatList
-            style={styles.list}
-            data={filteredTodos}
-            renderItem={({ item }) => <ListItem todoItem={item} toggleTodo={toggleTodo} />}
-          />
-        </GestureHandlerRootView>
+        <SQLiteProvider databaseName="todos.db" onInit={migrateDB}>
+          <TodoList />
+          <Footer />
+        </SQLiteProvider>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -163,5 +206,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 });
+
+
 
 
